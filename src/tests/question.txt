@@ -1,0 +1,34 @@
+API Integration Q&A
+====================
+
+1. How your system is generating, caching, and reusing the access tokens?
+
+Our system requests an access token from the OAuth 2.0 endpoint (POST /2.0/oauth/access_token) using client_credentials grant type. The token and its expiration timestamp are cached in memory. On every subsequent API call, the cached token is reused if it is still valid (checked before each request). This avoids unnecessary token requests and respects the OAuth endpoint rate limit.
+
+2. What are the necessary conditions for the access tokens to be regenerated?
+
+A new token is generated when: (1) No cached token exists (first request or server restart), or (2) The cached token is within 5 minutes of expiry. This 5-minute buffer ensures the token is refreshed before it becomes invalid, preventing failed requests due to expired tokens.
+
+3. How does the system behave when you receive 401 when creating orders?
+
+On receiving HTTP 401, the system invalidates the cached access token (clears the stored token and expiry timestamp), requests a new access token from the OAuth endpoint, and retries the order creation request with the new token.
+
+4. How does the system behave when you receive a 5xx error when creating orders?
+
+On receiving HTTP 5xx, the system retries the order creation up to 3 times with exponential backoff (2 seconds, 4 seconds, 8 seconds delay between attempts). If all 3 retries fail, the order is flagged with ninjavan_sync_failed = true and the error message is stored. A manual retry option is available in the admin UI for staff to re-trigger the API call later.
+
+5. What is the maximum time in second you should take to respond to a NinjaVan webhook before Ninja Van times out and retry?
+
+3 seconds. Our webhook endpoint returns HTTP 200 immediately upon receiving the request and processes the webhook payload asynchronously, well within the 3-second timeout.
+
+6. What status code does your webhook API return if an error occurs on your side and you want Ninja Van to retry?
+
+500. Returning a 5xx status code signals to NinjaVan that processing failed and the webhook should be retried. We return 200 for successful receipt and 4xx for requests we want to reject permanently (e.g. invalid signature).
+
+7. How many Ninja Van production accounts do you expect to use? If more than one account is anticipated, please provide the corresponding Shipper ID(s) or Client ID(s).
+
+1 production account. Shipper ID: 48969 (YONG THAI SIONG MEDICAL DEALERS SDN BHD).
+
+8. Looking back on your experience, what could we have done to make the integration smoother for you?
+
+The integration process was straightforward. The API documentation and sandbox environment were clear and easy to work with. No major issues encountered.
