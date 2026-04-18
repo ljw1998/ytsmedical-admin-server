@@ -10,7 +10,7 @@ class CustomersService {
 
     let query = supabase
       .from('customers')
-      .select('*, campaigns:source_campaign_id(id, name)', { count: 'exact' });
+      .select('*, campaigns:source_campaign_id(id, campaign_name)', { count: 'exact' });
 
     // Search across name, phone, email, messenger_id
     if (search) {
@@ -59,7 +59,7 @@ class CustomersService {
   async getCustomerById(id) {
     const { data: customer, error } = await supabase
       .from('customers')
-      .select('*, campaigns:source_campaign_id(id, name), customer_addresses(*)')
+      .select('*, campaigns:source_campaign_id(id, campaign_name), customer_addresses(*)')
       .eq('id', id)
       .single();
 
@@ -85,14 +85,38 @@ class CustomersService {
       throw new ConflictError('A customer with this phone number already exists');
     }
 
+    // Extract address if provided (it's not a column on customers table)
+    const { address, ...customerData } = data;
+
     const { data: customer, error } = await supabase
       .from('customers')
-      .insert(data)
-      .select('*, campaigns:source_campaign_id(id, name)')
+      .insert(customerData)
+      .select('*, campaigns:source_campaign_id(id, campaign_name)')
       .single();
 
     if (error) {
       throw error;
+    }
+
+    // Create default address if provided
+    if (address && (address.address_line_1 || address.address_line1)) {
+      const { error: addrError } = await supabase
+        .from('customer_addresses')
+        .insert({
+          customer_id: customer.id,
+          label: address.label || 'Home',
+          address_line_1: address.address_line_1 || address.address_line1,
+          address_line_2: address.address_line_2 || address.address_line2 || null,
+          area: address.area || null,
+          city: address.city,
+          state: address.state,
+          postcode: address.postcode,
+          is_default: true,
+        });
+
+      if (addrError) {
+        console.error('Failed to create default address:', addrError.message);
+      }
     }
 
     return customer;
@@ -120,7 +144,7 @@ class CustomersService {
       .from('customers')
       .update({ ...data, updated_at: new Date().toISOString() })
       .eq('id', id)
-      .select('*, campaigns:source_campaign_id(id, name)')
+      .select('*, campaigns:source_campaign_id(id, campaign_name)')
       .single();
 
     if (error) {

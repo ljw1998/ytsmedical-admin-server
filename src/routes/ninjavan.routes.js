@@ -30,6 +30,32 @@ router.get(
   ninjavanController.generateWaybill
 );
 
+// GET /print-waybill/:id - Print waybill for a single order (marks as printed)
+router.get(
+  '/print-waybill/:id',
+  authenticate,
+  requirePermission('ninjavan.waybill'),
+  uuidParamValidation,
+  validate,
+  ninjavanController.printWaybill
+);
+
+// GET /printable-orders - List NinjaVan pending_pickup orders eligible for AWB printing
+router.get(
+  '/printable-orders',
+  authenticate,
+  requirePermission('ninjavan.waybill'),
+  ninjavanController.listPrintableOrders
+);
+
+// POST /bulk-print-waybills - Bulk print selected order AWBs
+router.post(
+  '/bulk-print-waybills',
+  authenticate,
+  requirePermission('ninjavan.waybill'),
+  ninjavanController.bulkPrintWaybills
+);
+
 // DELETE /cancel/:id - Cancel a NinjaVan order
 router.delete(
   '/cancel/:id',

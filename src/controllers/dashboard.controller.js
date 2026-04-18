@@ -97,8 +97,16 @@ const getBusinessOverview = async (req, res, next) => {
   }
 };
 
+const getDailyTrend = async (req, res, next) => {
+  try {
+    const data = await dashboardService.getDailyTrend(req.query.date_from, req.query.date_to);
+    res.json(formatSuccessResponse({ message: SuccessMessages.FETCHED, data }));
+  } catch (error) { next(error); }
+};
+
 module.exports = {
   getDailySummary,
+  getDailyTrend,
   getOrderStats,
   getCampaignPerformance,
   getCodAnalytics,

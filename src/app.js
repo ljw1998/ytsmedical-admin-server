@@ -25,16 +25,21 @@ const codReportsRoutes = require('./routes/cod-reports.routes');
 const agentsRoutes = require('./routes/agents.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const activityLogsRoutes = require('./routes/activity-logs.routes');
+const placesRoutes = require('./routes/places.routes');
 
 // Initialize express app
 const app = express();
+
+// Trust proxy (required for Cloud Run behind load balancer — fixes X-Forwarded-For / rate limiting)
+app.set('trust proxy', true);
 
 // Security middleware
 app.use(helmet());
 
 // CORS configuration
+const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
 app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
+  origin: corsOrigin === '*' ? true : corsOrigin.split(','),
   credentials: true,
 }));
 
@@ -85,7 +90,10 @@ app.use('/api/admin/agents', agentsRoutes);
 app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/admin/activity-logs', activityLogsRoutes);
 
-// NinjaVan webhook (public endpoint — separate from /api/admin/)
+app.use('/api/admin/places', placesRoutes);
+
+// NinjaVan: admin routes (waybill, cancel, retry) + public webhook
+app.use('/api/admin/ninjavan', ninjavanRoutes);
 app.use('/api/webhooks/ninjavan', ninjavanRoutes);
 
 // 404 handler

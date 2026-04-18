@@ -2,6 +2,7 @@ const supabase = require('../config/database');
 const { PAGINATION } = require('../config/constants');
 const { NotFoundError, BadRequestError, ConflictError } = require('../utils/errors');
 const { generateOrderNumber, roundMoney } = require('../utils/helpers');
+const ninjavanService = require('./ninjavan.service');
 
 /**
  * List orders with pagination and filters
@@ -32,9 +33,6 @@ const listOrders = async (filters = {}) => {
       campaign:campaigns!source_campaign_id(id, campaign_name)
     `, { count: 'exact' });
 
-  if (order_status) {
-    query = query.eq('order_status', order_status);
-  }
   if (order_source) {
     query = query.eq('order_source', order_source);
   }
@@ -57,7 +55,14 @@ const listOrders = async (filters = {}) => {
     query = query.lte('order_date', date_to);
   }
   if (search) {
-    query = query.ilike('order_number', `%${search}%`);
+    query = query.or(`order_number.ilike.%${search}%,tracking_number.ilike.%${search}%`);
+  }
+
+  // Support comma-separated statuses for multi-status tab filtering
+  if (order_status && order_status.includes(',')) {
+    query = query.in('order_status', order_status.split(','));
+  } else if (order_status) {
+    query = query.eq('order_status', order_status);
   }
 
   query = query
@@ -79,6 +84,23 @@ const listOrders = async (filters = {}) => {
       totalPages: Math.ceil((count || 0) / effectiveLimit),
     },
   };
+};
+
+/**
+ * Get order counts grouped by order_status for tab badges
+ */
+const getOrderTabCounts = async () => {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('order_status');
+
+  if (error) throw new BadRequestError(`Failed: ${error.message}`);
+
+  const counts = {};
+  for (const o of (data || [])) {
+    counts[o.order_status] = (counts[o.order_status] || 0) + 1;
+  }
+  return counts;
 };
 
 /**
@@ -119,6 +141,7 @@ const createOrder = async (data, userId) => {
   const {
     customer_id,
     order_source,
+    source_campaign_id,
     payment_type,
     fulfilment_type,
     items,
@@ -127,6 +150,14 @@ const createOrder = async (data, userId) => {
     shipping_fee = 0,
     discount = 0,
     notes,
+    // Parcel details for NinjaVan
+    parcel_weight,
+    parcel_length,
+    parcel_width,
+    parcel_height,
+    pickup_date,
+    pickup_instructions,
+    delivery_instructions,
   } = data;
 
   // Generate order number
@@ -142,7 +173,7 @@ const createOrder = async (data, userId) => {
     if (item.item_type === 'product') {
       const { data: product, error } = await supabase
         .from('products')
-        .select('id, sku, product_name, selling_price')
+        .select('id, sku, product_name, unit_price')
         .eq('id', item.item_id)
         .single();
 
@@ -156,13 +187,13 @@ const createOrder = async (data, userId) => {
         sku: product.sku,
         item_name: product.product_name,
         quantity: item.quantity,
-        unit_price: product.selling_price,
-        line_total: roundMoney(product.selling_price * item.quantity),
+        unit_price: product.unit_price,
+        line_total: roundMoney(product.unit_price * item.quantity),
       };
     } else if (item.item_type === 'bundle') {
       const { data: bundle, error } = await supabase
         .from('bundles')
-        .select('id, sku, bundle_name, selling_price')
+        .select('id, bundle_sku, bundle_name, bundle_price')
         .eq('id', item.item_id)
         .single();
 
@@ -170,15 +201,27 @@ const createOrder = async (data, userId) => {
         throw new BadRequestError(`Bundle not found: ${item.item_id}`);
       }
 
+      // Fetch bundle components for snapshot
+      const { data: bundleComponents } = await supabase
+        .from('bundle_items')
+        .select('quantity, products(id, product_name, sku, unit_price)')
+        .eq('bundle_id', bundle.id);
+
       itemData = {
         item_type: 'bundle',
         item_id: bundle.id,
-        sku: bundle.sku,
+        sku: bundle.bundle_sku,
         item_name: bundle.bundle_name,
         quantity: item.quantity,
-        unit_price: bundle.selling_price,
-        line_total: roundMoney(bundle.selling_price * item.quantity),
+        unit_price: bundle.bundle_price,
+        line_total: roundMoney(bundle.bundle_price * item.quantity),
       };
+
+      // Only include bundle_snapshot if the column exists in the DB
+      const { error: colCheck } = await supabase.from('order_items').select('bundle_snapshot').limit(1);
+      if (!colCheck) {
+        itemData.bundle_snapshot = bundleComponents || [];
+      }
     }
 
     subtotal = roundMoney(subtotal + itemData.line_total);
@@ -195,6 +238,23 @@ const createOrder = async (data, userId) => {
 
   const order_type = (customerOrderCount || 0) > 0 ? 'repeat' : 'new';
 
+  // Use frontend-provided campaign if given, otherwise inherit from customer
+  const { data: custRecord } = await supabase
+    .from('customers')
+    .select('source_campaign_id')
+    .eq('id', customer_id)
+    .single();
+
+  const resolved_campaign_id = source_campaign_id || custRecord?.source_campaign_id || null;
+
+  // If admin changed the campaign, update the customer record too
+  if (source_campaign_id && source_campaign_id !== custRecord?.source_campaign_id) {
+    await supabase
+      .from('customers')
+      .update({ source_campaign_id })
+      .eq('id', customer_id);
+  }
+
   // Determine initial payment_status
   let initial_payment_status = 'unpaid';
   if (payment_type === 'cod') {
@@ -207,6 +267,7 @@ const createOrder = async (data, userId) => {
     customer_id,
     shipping_address_id: shipping_address_id || null,
     order_source,
+    source_campaign_id: resolved_campaign_id,
     order_type,
     payment_type,
     payment_status: initial_payment_status,
@@ -281,6 +342,148 @@ const createOrder = async (data, userId) => {
     console.error('Failed to log status history:', historyError.message);
   }
 
+  // Update customer stats (total_orders, total_spent, first_order_date)
+  const { data: currentCustomer } = await supabase
+    .from('customers')
+    .select('total_spent')
+    .eq('id', customer_id)
+    .single();
+
+  const customerUpdate = {
+    total_orders: (customerOrderCount || 0) + 1,
+    total_spent: roundMoney(parseFloat(currentCustomer?.total_spent || 0) + total_amount),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (order_type === 'new') {
+    customerUpdate.first_order_date = createdOrder.order_date;
+  }
+
+  await supabase
+    .from('customers')
+    .update(customerUpdate)
+    .eq('id', customer_id);
+
+  // ─── NinjaVan: Create shipment if fulfilment_type is ninjavan ───
+  if (fulfilment_type === 'ninjavan') {
+    try {
+      if (!fulfilment_location_id) {
+        throw new BadRequestError('Fulfilment location is required for NinjaVan orders');
+      }
+
+      // Fetch fulfilment location (sender address)
+      const { data: fcLocation, error: fcError } = await supabase
+        .from('storage_locations')
+        .select('*')
+        .eq('id', fulfilment_location_id)
+        .single();
+
+      if (fcError || !fcLocation) {
+        throw new BadRequestError('Fulfilment location not found');
+      }
+
+      // Fetch customer
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('name, phone, email')
+        .eq('id', customer_id)
+        .single();
+
+      // Fetch shipping address
+      const { data: shippingAddress } = await supabase
+        .from('customer_addresses')
+        .select('*')
+        .eq('id', shipping_address_id)
+        .single();
+
+      if (!customer || !shippingAddress) {
+        throw new BadRequestError('Customer or shipping address not found');
+      }
+
+      // Calculate total weight from products if not provided
+      let weight = parseFloat(parcel_weight) || 0;
+      if (!weight) {
+        for (const item of orderItems) {
+          if (item.item_type === 'product') {
+            const { data: prod } = await supabase.from('products').select('weight').eq('id', item.item_id).single();
+            weight += (prod?.weight || 0.5) * item.quantity;
+          } else {
+            weight += 0.5 * item.quantity;
+          }
+        }
+        weight = Math.max(weight, 0.1);
+      }
+
+      // Build NinjaVan order data matching the service's createOrder signature
+      const nvOrder = {
+        order_number: createdOrder.order_number,
+        total_amount: createdOrder.total_amount,
+        payment_type: createdOrder.payment_type,
+        weight,
+        parcel_length: parseFloat(parcel_length) || null,
+        parcel_width: parseFloat(parcel_width) || null,
+        parcel_height: parseFloat(parcel_height) || null,
+        id: createdOrder.id,
+        pickup_instructions: pickup_instructions || null,
+        delivery_instructions: delivery_instructions || null,
+        items: orderItems,
+      };
+
+      const nvCustomer = {
+        name: customer.name,
+        phone: customer.phone,
+        email: customer.email || '',
+      };
+
+      const nvAddress = {
+        address_line1: shippingAddress.address_line_1,
+        address_line2: shippingAddress.address_line_2 || '',
+        area: shippingAddress.area || '',
+        city: shippingAddress.city,
+        state: shippingAddress.state,
+        postcode: shippingAddress.postcode,
+        country: 'MY',
+      };
+
+      const nvLocation = {
+        location_name: fcLocation.location_name,
+        phone: fcLocation.contact_phone || '',
+        address_line1: fcLocation.address_line_1,
+        address_line2: fcLocation.address_line_2 || '',
+        area: fcLocation.area || '',
+        city: fcLocation.city,
+        state: fcLocation.state,
+        postcode: fcLocation.postcode,
+        country: 'MY',
+      };
+
+      const result = await ninjavanService.createOrder(nvOrder, nvCustomer, nvAddress, nvLocation);
+
+      // Update order with tracking number
+      await supabase
+        .from('orders')
+        .update({
+          tracking_number: result.tracking_number,
+          ninjavan_requested_tracking_number: result.requested_tracking_number,
+          courier: 'ninjavan',
+        })
+        .eq('id', createdOrder.id);
+
+    } catch (nvError) {
+      console.error('NinjaVan order creation failed:', nvError.message);
+
+      // Flag sync failure but don't fail the order creation
+      await supabase
+        .from('orders')
+        .update({
+          ninjavan_sync_failed: true,
+          ninjavan_sync_error: nvError.message,
+          courier: 'ninjavan',
+        })
+        .eq('id', createdOrder.id);
+    }
+  }
+
   return getOrderById(createdOrder.id);
 };
 
@@ -335,7 +538,7 @@ const updateOrder = async (id, data) => {
 const updateOrderStatus = async (id, newStatus, notes, userId) => {
   const { data: order, error: fetchError } = await supabase
     .from('orders')
-    .select('id, order_status')
+    .select('id, order_status, customer_id, total_amount')
     .eq('id', id)
     .single();
 
@@ -392,7 +595,44 @@ const updateOrderStatus = async (id, newStatus, notes, userId) => {
     console.error('Failed to log status history:', historyError.message);
   }
 
+  // Recalculate customer stats when order is cancelled or returned
+  const statsRecalcStatuses = ['cancelled', 'returned'];
+  if (statsRecalcStatuses.includes(newStatus) && !statsRecalcStatuses.includes(previousStatus)) {
+    await recalcCustomerStats(order.customer_id);
+  }
+
   return updated;
+};
+
+/**
+ * Recalculate customer total_orders, total_spent, first_order_date
+ * from non-cancelled/non-returned orders
+ */
+const recalcCustomerStats = async (customerId) => {
+  const excludeStatuses = ['cancelled', 'returned'];
+
+  const { data: activeOrders } = await supabase
+    .from('orders')
+    .select('total_amount, order_date')
+    .eq('customer_id', customerId)
+    .not('order_status', 'in', `(${excludeStatuses.join(',')})`)
+    .order('order_date', { ascending: true });
+
+  const totalOrders = (activeOrders || []).length;
+  const totalSpent = (activeOrders || []).reduce(
+    (sum, o) => sum + parseFloat(o.total_amount || 0), 0
+  );
+  const firstOrderDate = totalOrders > 0 ? activeOrders[0].order_date : null;
+
+  await supabase
+    .from('customers')
+    .update({
+      total_orders: totalOrders,
+      total_spent: roundMoney(totalSpent),
+      first_order_date: firstOrderDate,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', customerId);
 };
 
 /**
@@ -401,7 +641,7 @@ const updateOrderStatus = async (id, newStatus, notes, userId) => {
 const deleteOrder = async (id) => {
   const { data: order, error: fetchError } = await supabase
     .from('orders')
-    .select('id, order_status')
+    .select('id, order_status, customer_id, total_amount')
     .eq('id', id)
     .single();
 
@@ -421,6 +661,9 @@ const deleteOrder = async (id) => {
   if (error) {
     throw new BadRequestError(`Failed to delete order: ${error.message}`);
   }
+
+  // Recalculate customer stats after deletion
+  await recalcCustomerStats(order.customer_id);
 
   return { message: 'Order deleted successfully' };
 };
@@ -627,6 +870,7 @@ const rejectPayment = async (orderId, paymentId, userId) => {
 
 module.exports = {
   listOrders,
+  getOrderTabCounts,
   getOrderById,
   createOrder,
   updateOrder,

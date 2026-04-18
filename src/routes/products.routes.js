@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const productsController = require('../controllers/products.controller');
+const { authenticate } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permission');
 const validate = require('../middleware/validation');
 const productsValidator = require('../validators/products.validator');
 const { uploadSingleImage } = require('../middleware/upload.middleware');
+
+router.use(authenticate);
 
 router.get(
   '/',

@@ -86,32 +86,78 @@ const FULFILMENT_TYPES = ['ninjavan', 'other_courier', 'self_pickup', 'shopee', 
 // Stock movement types
 const MOVEMENT_TYPES = ['stock_in', 'stock_out', 'transfer_out', 'transfer_in', 'adjustment', 'return', 'bundle_sale', 'shopee_sale', 'agent_sale'];
 
-// NinjaVan webhook event to order status mapping
+// NinjaVan V2 webhook event → order status mapping
 const NINJAVAN_EVENT_STATUS_MAP = {
+  // Pickup
   'Pending Pickup': 'pending_pickup',
+  'Driver dispatched for Pickup': 'pending_pickup',
+  'Pending Pickup, Shipper Dropoff': 'pending_pickup',
+  // In Transit
   'Picked Up, In Transit to Origin Hub': 'in_transit',
   'Arrived at Origin Hub': 'in_transit',
-  'In Transit to Next Hub': 'in_transit',
   'Arrived at Transit Hub': 'in_transit',
+  'Arrived at Destination Hub': 'in_transit',
+  'In Transit to Next Sorting Hub': 'in_transit',
+  // Out for Delivery
   'On Vehicle for Delivery': 'out_for_delivery',
+  'At PUDO, Pending Customer Collection': 'out_for_delivery',
+  // Delivered (terminal)
   'Delivered, Received by Customer': 'delivered',
   'Delivered, Left at Doorstep': 'delivered',
   'Delivered, Collected by Customer': 'delivered',
+  // Returned (terminal)
   'Returned to Sender': 'returned',
-  'Cancelled': 'cancelled'
+  // Cancelled (terminal)
+  'Cancelled': 'cancelled',
+  // Lost / Damaged → treat as lost
+  'Delivery Exception, Parcel Lost': 'lost',
+  'Delivery Exception, Parcel Damaged': 'lost',
 };
 
-// NinjaVan events that should not change status but add notes
+// NinjaVan V2 events that should not change status but store info + add notes
 const NINJAVAN_NOTE_EVENTS = [
+  // Pickup exceptions
+  'Pickup Exception, Pending Reschedule',
+  'Pickup Exception, Reattempt Scheduled',
+  'Pickup Exception, Max Attempts Reached',
+  'Pickup Exception, Pending Retrieval from PUDO',
+  // Delivery exceptions
   'Delivery Exception, Pending Reschedule',
-  'Delivery Exception, Max Attempts Reached'
+  'Delivery Exception, Reattempt Scheduled',
+  'Delivery Exception, Max Attempts Reached',
+  'Delivery Exception, Parcel Overstayed at PUDO',
+  'Delivery Exception, Return to Sender Initiated',
+  // Return to shipper exceptions
+  'Return to Shipper Exception, Parcel triggered for Shipper Collection',
+  'Return to Shipper Exception, Parcel collected by Shipper',
+  'Return to Shipper Exception, Parcel Scrapped',
+  'Return to Shipper Exception, Max Attempts Reached',
 ];
 
-// NinjaVan delivered events (for COD payment processing)
+// NinjaVan V2 delivered events (for COD payment processing)
 const NINJAVAN_DELIVERED_EVENTS = [
   'Delivered, Received by Customer',
   'Delivered, Left at Doorstep',
-  'Delivered, Collected by Customer'
+  'Delivered, Collected by Customer',
+];
+
+// NinjaVan V2 pickup exception events
+const NINJAVAN_PICKUP_EXCEPTION_EVENTS = [
+  'Pickup Exception, Pending Reschedule',
+  'Pickup Exception, Reattempt Scheduled',
+  'Pickup Exception, Max Attempts Reached',
+  'Pickup Exception, Pending Retrieval from PUDO',
+];
+
+// NinjaVan V2 delivery exception events
+const NINJAVAN_DELIVERY_EXCEPTION_EVENTS = [
+  'Delivery Exception, Pending Reschedule',
+  'Delivery Exception, Reattempt Scheduled',
+  'Delivery Exception, Max Attempts Reached',
+  'Delivery Exception, Parcel Overstayed at PUDO',
+  'Delivery Exception, Parcel Lost',
+  'Delivery Exception, Parcel Damaged',
+  'Delivery Exception, Return to Sender Initiated',
 ];
 
 module.exports = {
@@ -131,5 +177,7 @@ module.exports = {
   MOVEMENT_TYPES,
   NINJAVAN_EVENT_STATUS_MAP,
   NINJAVAN_NOTE_EVENTS,
-  NINJAVAN_DELIVERED_EVENTS
+  NINJAVAN_DELIVERED_EVENTS,
+  NINJAVAN_PICKUP_EXCEPTION_EVENTS,
+  NINJAVAN_DELIVERY_EXCEPTION_EVENTS
 };

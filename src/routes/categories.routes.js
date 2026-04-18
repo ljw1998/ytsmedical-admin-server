@@ -1,9 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const categoriesController = require('../controllers/categories.controller');
+const { authenticate } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permission');
 const validate = require('../middleware/validation');
 const categoriesValidator = require('../validators/categories.validator');
+
+router.use(authenticate);
 
 router.get(
   '/',

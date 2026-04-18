@@ -165,6 +165,7 @@ class MetaAdsController {
         page = 1,
         limit = 20,
         campaign_id,
+        ad_account_id,
         date_from,
         date_to,
       } = req.query;
@@ -173,6 +174,7 @@ class MetaAdsController {
         page: parseInt(page, 10),
         limit: parseInt(limit, 10),
         campaign_id,
+        ad_account_id,
         date_from,
         date_to,
       });

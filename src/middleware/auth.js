@@ -21,7 +21,7 @@ const getAdminUserWithPermissions = async (userId) => {
   const { data: permData } = await supabase
     .from('v_admin_user_permissions')
     .select('*')
-    .eq('admin_user_id', userId)
+    .eq('user_id', userId)
     .single();
 
   return {

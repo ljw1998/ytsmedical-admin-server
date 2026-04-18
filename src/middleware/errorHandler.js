@@ -20,7 +20,10 @@ const errorHandler = (err, req, res, next) => {
     method: req.method,
   });
 
-  let statusCode = err.statusCode || 500;
+  let statusCode = parseInt(err.statusCode, 10);
+  if (!Number.isInteger(statusCode) || statusCode < 100 || statusCode > 599) {
+    statusCode = 500;
+  }
 
   if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
     statusCode = 401;

@@ -64,13 +64,14 @@ class StockService {
     const { data, error } = await supabase
       .from('stock')
       .select('*, product:products(id, product_name, sku), location:storage_locations(id, location_name, location_type)')
-      .filter('quantity', 'lte', 'low_stock_threshold')
       .order('quantity', { ascending: true });
 
     if (error) throw error;
 
-    // If RLS filter doesn't work, filter client-side
-    const filtered = data.filter(item => item.quantity <= item.low_stock_threshold);
+    // Supabase doesn't support column-to-column comparison, filter client-side
+    const filtered = (data || []).filter(item =>
+      item.low_stock_threshold != null && item.quantity <= item.low_stock_threshold
+    );
 
     return filtered;
   }

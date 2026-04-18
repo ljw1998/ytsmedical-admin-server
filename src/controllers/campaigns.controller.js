@@ -14,6 +14,7 @@ class CampaignsController {
         status,
         platform,
         objective,
+        ad_account_id,
       } = req.query;
 
       const result = await campaignsService.list({
@@ -23,6 +24,7 @@ class CampaignsController {
         status,
         platform,
         objective,
+        ad_account_id,
       });
 
       res.json(

@@ -24,6 +24,13 @@ router.get(
   ordersController.listOrders
 );
 
+// GET /tab-counts - Get order counts by status for tab badges
+router.get(
+  '/tab-counts',
+  requirePermission('orders.view'),
+  ordersController.getTabCounts
+);
+
 // GET /:id - Get order by ID
 router.get(
   '/:id',

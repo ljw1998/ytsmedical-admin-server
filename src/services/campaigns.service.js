@@ -2,7 +2,7 @@ const supabase = require('../config/database');
 const { NotFoundError, ConflictError } = require('../utils/errors');
 
 class CampaignsService {
-  async list({ page = 1, limit = 20, search = '', status = null, platform = null, objective = null }) {
+  async list({ page = 1, limit = 20, search = '', status = null, platform = null, objective = null, ad_account_id = null }) {
     const offset = (page - 1) * limit;
 
     let query = supabase
@@ -23,6 +23,10 @@ class CampaignsService {
 
     if (objective) {
       query = query.eq('objective', objective);
+    }
+
+    if (ad_account_id) {
+      query = query.eq('ad_account_id', ad_account_id);
     }
 
     query = query

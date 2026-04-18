@@ -36,6 +36,16 @@ const listOrders = async (req, res, next) => {
 };
 
 /**
+ * Get order tab counts
+ */
+const getTabCounts = async (req, res, next) => {
+  try {
+    const counts = await ordersService.getOrderTabCounts();
+    res.json(formatSuccessResponse({ message: SuccessMessages.FETCHED, data: counts }));
+  } catch (error) { next(error); }
+};
+
+/**
  * Get order by ID
  */
 const getOrderById = async (req, res, next) => {
@@ -224,6 +234,7 @@ const getOrderHistory = async (req, res, next) => {
 
 module.exports = {
   listOrders,
+  getTabCounts,
   getOrderById,
   createOrder,
   updateOrder,

@@ -7,6 +7,13 @@ const { requirePermission } = require('../middleware/permission');
 // All routes require authentication
 router.use(authenticate);
 
+// GET /daily-trend - Daily trend (Race Report rows)
+router.get(
+  '/daily-trend',
+  requirePermission('dashboard.view'),
+  dashboardController.getDailyTrend
+);
+
 // GET /daily - Daily summary
 router.get(
   '/daily',

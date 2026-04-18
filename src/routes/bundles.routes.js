@@ -1,9 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const bundlesController = require('../controllers/bundles.controller');
+const { authenticate } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permission');
 const validate = require('../middleware/validation');
 const bundlesValidator = require('../validators/bundles.validator');
+
+router.use(authenticate);
 
 router.get(
   '/',

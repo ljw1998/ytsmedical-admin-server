@@ -27,7 +27,7 @@ class AuthService {
     const { data: permData } = await supabase
       .from('v_admin_user_permissions')
       .select('*')
-      .eq('admin_user_id', userId)
+      .eq('user_id', userId)
       .single();
 
     return {
@@ -89,11 +89,16 @@ class AuthService {
     const refreshTokenExpiry = new Date();
     refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + 7); // 7 days
 
-    await supabase.from('admin_refresh_tokens').insert({
+    const { error: insertErr } = await supabase.from('admin_refresh_tokens').insert({
       admin_user_id: adminUser.id,
       token: hashedRefreshToken,
       expires_at: refreshTokenExpiry.toISOString()
     });
+
+    if (insertErr) {
+      console.error('CRITICAL: Failed to store refresh token:', insertErr.message, insertErr.details);
+      throw new Error('Failed to establish session. Please contact support.');
+    }
 
     console.log(`Admin user logged in: ${adminUser.email}`);
 

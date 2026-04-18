@@ -60,7 +60,7 @@ const create = [
     .isLength({ max: 50 })
     .withMessage('Contact phone must not exceed 50 characters'),
   body('contact_email')
-    .optional()
+    .optional({ values: 'falsy' })
     .trim()
     .isEmail()
     .withMessage('Contact email must be a valid email address'),
@@ -124,7 +124,7 @@ const update = [
     .isLength({ max: 50 })
     .withMessage('Contact phone must not exceed 50 characters'),
   body('contact_email')
-    .optional()
+    .optional({ values: 'falsy' })
     .trim()
     .isEmail()
     .withMessage('Contact email must be a valid email address'),

@@ -7,7 +7,7 @@ class BundlesService {
 
     let query = supabase
       .from('bundles')
-      .select('*', { count: 'exact' });
+      .select('*, bundle_items(quantity, products(id, product_name, sku, unit_price))', { count: 'exact' });
 
     if (search) {
       query = query.or(`bundle_name.ilike.%${search}%,bundle_sku.ilike.%${search}%`);
