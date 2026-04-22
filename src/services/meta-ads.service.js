@@ -365,14 +365,27 @@ class MetaAdsService {
         status: 'success',
       };
     } catch (error) {
-      // Update sync log with failure
+      let errMsg = error.message;
+      if (error.response) {
+        const meta = error.response.data?.error;
+        if (meta) {
+          errMsg = `Meta API ${error.response.status}: ${meta.message || ''}` +
+            (meta.error_user_title ? ` | ${meta.error_user_title}` : '') +
+            (meta.error_user_msg ? ` — ${meta.error_user_msg}` : '') +
+            (meta.code ? ` (code ${meta.code}${meta.error_subcode ? `/${meta.error_subcode}` : ''})` : '') +
+            (meta.fbtrace_id ? ` [fbtrace_id ${meta.fbtrace_id}]` : '');
+        } else {
+          errMsg = `HTTP ${error.response.status}: ${JSON.stringify(error.response.data).slice(0, 1000)}`;
+        }
+      }
+
       await supabase
         .from('ad_spend_sync_logs')
         .update({
           rows_upserted: totalRowsUpserted,
           campaigns_created: totalCampaignsCreated,
           status: totalRowsUpserted > 0 ? 'partial' : 'failed',
-          error_message: error.message,
+          error_message: errMsg,
         })
         .eq('id', syncLogId);
 
@@ -464,28 +477,20 @@ class MetaAdsService {
   async getDailySpend({ page = 1, limit = 20, campaign_id = null, ad_account_id = null, date_from = null, date_to = null }) {
     const offset = (page - 1) * limit;
 
+    const campaignSelect = ad_account_id
+      ? 'campaigns!inner(id, campaign_name, meta_campaign_id, ad_account_id)'
+      : 'campaigns(id, campaign_name, meta_campaign_id)';
+
     let query = supabase
       .from('campaign_daily_spend')
-      .select('*, campaigns(id, campaign_name, meta_campaign_id)', { count: 'exact' });
+      .select(`*, ${campaignSelect}`, { count: 'exact' });
 
     if (campaign_id) {
       query = query.eq('campaign_id', campaign_id);
     }
 
     if (ad_account_id) {
-      const { data: accountCampaigns, error: accErr } = await supabase
-        .from('campaigns')
-        .select('id')
-        .eq('ad_account_id', ad_account_id);
-      if (accErr) throw accErr;
-      const campaignIds = (accountCampaigns || []).map((c) => c.id);
-      if (campaignIds.length === 0) {
-        return {
-          data: [],
-          pagination: { page: parseInt(page), limit: parseInt(limit), total: 0, totalPages: 0 },
-        };
-      }
-      query = query.in('campaign_id', campaignIds);
+      query = query.eq('campaigns.ad_account_id', ad_account_id);
     }
 
     if (date_from) {
